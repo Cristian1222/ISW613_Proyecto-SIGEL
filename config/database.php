@@ -5,7 +5,7 @@ declare(strict_types=1);
 $host = '127.0.0.1';
 $dbname = 'isw613_proyecto_sigel';
 $username = 'root';
-$password = ''; // Configuración habitual de XAMPP local
+$password = ''; 
 
 $dsn = "mysql:host={$host};dbname={$dbname};charset=utf8mb4";
 
