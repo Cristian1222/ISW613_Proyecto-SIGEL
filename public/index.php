@@ -3,8 +3,6 @@ declare(strict_types=1);
 
 session_start();
 
-require_once __DIR__ . '/../includes/header.php';
-
 // Si ya inició sesión, ir al panel principal.
 if (isset($_SESSION['usuario'])) {
     header('Location: pages/dashboard.php');
@@ -12,6 +10,7 @@ if (isset($_SESSION['usuario'])) {
 }
 
 require_once __DIR__ . '/../includes/header.php';
+require_once __DIR__ . '/../includes/alerts.php';
 ?>
 
 <div class="container mt-5">
@@ -29,19 +28,7 @@ require_once __DIR__ . '/../includes/header.php';
 
                 <div class="card-body">
 
-                    <?php if (isset($_GET['error'])): ?>
-                        <div class="alert alert-danger">
-                            No se pudo iniciar sesión.
-                            Verifica tu correo y contraseña.
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if (isset($_GET['inactive'])): ?>
-                        <div class="alert alert-warning">
-                            Esta cuenta está desactivada.
-                            Contacta al administrador.
-                        </div>
-                    <?php endif; ?>
+                    <?php renderAlert(); ?>
 
                     <form action="actions/login.php" method="POST">
                         <div class="mb-3">

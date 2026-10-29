@@ -124,7 +124,8 @@ try {
                     'estado' => $estado,
                 ]);
 
-                $guardado = true;
+                header('Location: crear_equipo.php?success=equipment_created');
+                exit;
 
                 $codigo = '';
                 $nombre = '';
@@ -149,6 +150,7 @@ try {
 }
 
 require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../includes/alerts.php';
 ?>
 
 <div class="container py-5">
@@ -159,11 +161,7 @@ require_once __DIR__ . '/../../includes/header.php';
         </p>
     </div>
 
-    <?php if ($guardado): ?>
-        <div class="alert alert-success">
-            ¡El equipo se registró correctamente!
-        </div>
-    <?php endif; ?>
+    <?php renderAlert(); ?>
 
     <?php if ($errores !== []): ?>
         <div class="alert alert-danger">

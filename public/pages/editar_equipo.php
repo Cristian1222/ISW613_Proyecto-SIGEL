@@ -4,7 +4,12 @@ declare(strict_types=1);
 session_start();
 
 if (!isset($_SESSION['usuario'])) {
-    header('Location: ../index.php');
+    header('Location: ../index.php?error=login_required');
+    exit;
+}
+
+if (($_SESSION['usuario']['rol'] ?? '') !== 'admin') {
+    header('Location: equipos.php?error=forbidden');
     exit;
 }
 
@@ -146,7 +151,7 @@ try {
                     'id' => $id,
                 ]);
 
-                header('Location: equipos.php?actualizado=1');
+                header('Location: equipos.php?success=equipment_updated');
                 exit;
             } catch (PDOException $e) {
                 if ($e->getCode() === '23000') {
@@ -164,6 +169,7 @@ try {
 }
 
 require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../includes/alerts.php';
 ?>
 
 <div class="container py-5">
@@ -171,6 +177,7 @@ require_once __DIR__ . '/../../includes/header.php';
     <p class="text-muted mb-4">
         Modifica los datos del equipo seleccionado.
     </p>
+    <?php renderAlert(); ?>
 
     <?php if ($errores !== []): ?>
         <div class="alert alert-danger">

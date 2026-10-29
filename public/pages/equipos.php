@@ -4,12 +4,21 @@ declare(strict_types=1);
 session_start();
 
 if (!isset($_SESSION['usuario'])) {
-    header('Location: ../index.php');
+    header('Location: ../index.php?error=login_required');
     exit;
+}
+
+$rol = $_SESSION['usuario']['rol'] ?? '';
+$esAdmin = $rol === 'admin';
+$puedeGestionar = in_array($rol, ['admin', 'operador'], true);
+
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../includes/alerts.php';
 
 try {
     $sql = "SELECT
@@ -34,34 +43,45 @@ try {
 }
 ?>
 
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
-    <div>
-        <h1 class="h3">Gestión de equipos</h1>
-        <p class="text-muted mb-0">
-            Inventario de equipos registrados en SIGEL.
-        </p>
-    </div>
+<div class="container py-4">
 
-    <div class="d-flex flex-wrap gap-2">
-        <a href="crear_equipo.php" class="btn btn-primary">
-            + Registrar equipo
-        </a>
+    <?php renderAlert(); ?>
 
-        <a href="dashboard.php" class="btn btn-outline-secondary">
-            Volver al panel
-        </a>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h1 class="h3">Consulta de equipos</h1>
+            <p class="text-muted mb-0">
+                Consulta el inventario y la disponibilidad de los equipos registrados en SIGEL.
+            </p>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2">
+            <?php if ($esAdmin): ?>
+                <a href="crear_equipo.php" class="btn btn-primary">
+                    + Registrar equipo
+                </a>
+            <?php endif; ?>
+
+            <a href="dashboard.php" class="btn btn-outline-secondary">
+                Volver al panel
+            </a>
+        </div>
     </div>
-</div>
 
     <?php if (isset($errorConsulta)): ?>
+
         <div class="alert alert-danger">
             No se pudo cargar el inventario. Intenta nuevamente.
         </div>
+
     <?php elseif (count($equipos) === 0): ?>
+
         <div class="alert alert-info">
             Todavía no hay equipos registrados.
         </div>
+
     <?php else: ?>
+
         <div class="table-responsive">
             <table class="table table-striped table-hover align-middle">
                 <thead class="table-dark">
@@ -72,9 +92,13 @@ try {
                         <th>Total</th>
                         <th>Disponibles</th>
                         <th>Estado</th>
-                        <th>Acciones</th>
+
+                        <?php if ($puedeGestionar): ?>
+                            <th>Acciones</th>
+                        <?php endif; ?>
                     </tr>
                 </thead>
+
                 <tbody>
                     <?php foreach ($equipos as $equipo): ?>
                         <tr>
@@ -85,6 +109,7 @@ try {
                                     'UTF-8'
                                 ) ?>
                             </td>
+
                             <td>
                                 <?= htmlspecialchars(
                                     $equipo['nombre'],
@@ -92,6 +117,7 @@ try {
                                     'UTF-8'
                                 ) ?>
                             </td>
+
                             <td>
                                 <?= htmlspecialchars(
                                     $equipo['categoria'],
@@ -99,8 +125,11 @@ try {
                                     'UTF-8'
                                 ) ?>
                             </td>
+
                             <td><?= (int) $equipo['cantidad_total'] ?></td>
+
                             <td><?= (int) $equipo['cantidad_disponible'] ?></td>
+
                             <td>
                                 <?php
                                 $claseEstado = match ($equipo['estado']) {
@@ -109,6 +138,7 @@ try {
                                     default => 'secondary',
                                 };
                                 ?>
+
                                 <span class="badge text-bg-<?= $claseEstado ?>">
                                     <?= htmlspecialchars(
                                         ucfirst($equipo['estado']),
@@ -117,19 +147,55 @@ try {
                                     ) ?>
                                 </span>
                             </td>
-                            <td>
-                         <a
-                        href="editar_equipo.php?id=<?= (int) $equipo['id'] ?>"
-                                    class="btn btn-sm btn-outline-primary">
-                                Editar
-                        </a>
-                        </td>
-                    </tr>
+
+                            <?php if ($puedeGestionar): ?>
+                                <td>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        <?php if ($esAdmin): ?>
+                                            <a
+                                                href="editar_equipo.php?id=<?= (int) $equipo['id'] ?>"
+                                                class="btn btn-sm btn-outline-primary">
+                                                Editar
+                                            </a>
+
+                                            <form
+                                                action="../actions/eliminar_equipo.php"
+                                                method="POST"
+                                                onsubmit="return confirm('¿Estás seguro de que deseas eliminar este equipo? Esta acción no se puede deshacer.');">
+
+                                                <input
+                                                    type="hidden"
+                                                    name="id"
+                                                    value="<?= (int) $equipo['id'] ?>">
+
+                                                <input
+                                                    type="hidden"
+                                                    name="csrf_token"
+                                                    value="<?= htmlspecialchars(
+                                                        $_SESSION['csrf_token'],
+                                                        ENT_QUOTES,
+                                                        'UTF-8'
+                                                    ) ?>">
+
+                                                <button
+                                                    type="submit"
+                                                    class="btn btn-sm btn-outline-danger">
+                                                    Eliminar
+                                                </button>
+                                            </form>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                            <?php endif; ?>
+
+                        </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
+
     <?php endif; ?>
+
 </div>
 
 <?php require_once __DIR__ . '/../../includes/footer.php'; ?>
