@@ -15,6 +15,10 @@ const MESSAGES = [
         'equipment_related' => 'No se puede eliminar el equipo porque tiene registros relacionados, posiblemente préstamos.',
         'forbidden' => 'No tiene permisos para realizar esta acción.',
         'duplicate_email' => 'Ese correo electrónico ya está registrado.',
+        'loan_created' => 'La solicitud de préstamo se registró correctamente.',
+        'loan_approved' => 'La solicitud de préstamo fue aprobada correctamente.',
+        'stock_insufficient' => 'No hay suficientes unidades disponibles para entregar este préstamo.',
+        'loan_returned' => 'La devolución se registró correctamente y el inventario fue actualizado.',
     ],
     'success' => [
         'equipment_created' => 'El equipo se registró correctamente.',
@@ -22,6 +26,7 @@ const MESSAGES = [
         'equipment_deleted' => 'El equipo se eliminó correctamente.',
         'logged_out' => 'Sesión cerrada correctamente.',
         'user_created' => 'El usuario se registró correctamente.',
+        'loan_delivered' => 'El préstamo fue entregado correctamente y el inventario fue actualizado.',
     ],
 ];
 

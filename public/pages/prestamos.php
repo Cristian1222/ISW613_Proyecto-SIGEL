@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 session_start();
@@ -7,6 +8,13 @@ if (!isset($_SESSION['usuario'])) {
     header('Location: ../index.php?error=login_required');
     exit;
 }
+
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+$rol = $_SESSION['usuario']['rol'] ?? '';
+$puedeGestionar = in_array($rol, ['admin', 'operador'], true);
 
 require_once __DIR__ . '/../../config/database.php';
 
@@ -40,7 +48,6 @@ try {
 
     $consulta = $pdo->query($sql);
     $prestamos = $consulta->fetchAll(PDO::FETCH_ASSOC);
-
 } catch (PDOException $e) {
     error_log($e->getMessage());
     $errorConsulta = true;
@@ -70,6 +77,7 @@ $clasesEstado = [
     <?php renderAlert(); ?>
 
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+
         <div>
             <h1 class="h3 mb-1">Gestión de préstamos</h1>
             <p class="text-muted mb-0">
@@ -78,13 +86,17 @@ $clasesEstado = [
         </div>
 
         <div class="d-flex flex-wrap gap-2">
-            <a href="crear_prestamo.php" class="btn btn-primary">
-                Registrar préstamo
-            </a>
+
+            <?php if ($puedeGestionar): ?>
+                <a href="crear_prestamo.php" class="btn btn-primary">
+                    Registrar préstamo
+                </a>
+            <?php endif; ?>
 
             <a href="../index.php" class="btn btn-outline-secondary">
                 Volver al panel
             </a>
+
         </div>
     </div>
 
@@ -105,8 +117,11 @@ $clasesEstado = [
 
         <div class="card shadow-sm">
             <div class="card-body">
+
                 <div class="table-responsive">
+
                     <table class="table table-hover align-middle">
+
                         <thead class="table-dark">
                             <tr>
                                 <th>N.º</th>
@@ -117,18 +132,26 @@ $clasesEstado = [
                                 <th>Devolución real</th>
                                 <th>Estado</th>
                                 <th>Observaciones</th>
+
+                                <?php if ($puedeGestionar): ?>
+                                    <th>Acciones</th>
+                                <?php endif; ?>
                             </tr>
                         </thead>
 
                         <tbody>
+
                             <?php foreach ($prestamos as $prestamo): ?>
+
                                 <?php
                                 $estado = $prestamo['estado'];
+
                                 $clase = $clasesEstado[$estado]
                                     ?? 'bg-secondary';
                                 ?>
 
                                 <tr>
+
                                     <td>
                                         <?= (int) $prestamo['id'] ?>
                                     </td>
@@ -172,7 +195,7 @@ $clasesEstado = [
                                                 ENT_QUOTES,
                                                 'UTF-8'
                                             )
-                                            : 'Pendiente' ?>
+                                            : '—' ?>
                                     </td>
 
                                     <td>
@@ -192,11 +215,116 @@ $clasesEstado = [
                                             'UTF-8'
                                         ) ?: '—' ?>
                                     </td>
+
+                                    <?php if ($puedeGestionar): ?>
+
+                                        <td>
+
+                                            <?php if ($estado === 'pendiente'): ?>
+
+                                                <!-- Botón para aprobar -->
+                                                <form
+                                                    action="../actions/aprobar_prestamo.php"
+                                                    method="POST"
+                                                    class="mb-1"
+                                                    onsubmit="return confirm('¿Deseas aprobar este préstamo?');">
+
+                                                    <input
+                                                        type="hidden"
+                                                        name="csrf_token"
+                                                        value="<?= htmlspecialchars(
+                                                                    $_SESSION['csrf_token'],
+                                                                    ENT_QUOTES,
+                                                                    'UTF-8'
+                                                                ) ?>">
+
+                                                    <input
+                                                        type="hidden"
+                                                        name="prestamo_id"
+                                                        value="<?= (int) $prestamo['id'] ?>">
+
+                                                    <button
+                                                        type="submit"
+                                                        class="btn btn-sm btn-success">
+                                                        Aprobar
+                                                    </button>
+
+                                                </form>
+
+                                            <?php elseif ($estado === 'aprobado'): ?>
+
+                                                <!-- Botón para entregar -->
+                                                <form
+                                                    action="../actions/entregar_prestamo.php"
+                                                    method="POST"
+                                                    onsubmit="return confirm('¿Deseas registrar la entrega de este préstamo?');">
+
+                                                    <input
+                                                        type="hidden"
+                                                        name="csrf_token"
+                                                        value="<?= htmlspecialchars(
+                                                                    $_SESSION['csrf_token'],
+                                                                    ENT_QUOTES,
+                                                                    'UTF-8'
+                                                                ) ?>">
+
+                                                    <input
+                                                        type="hidden"
+                                                        name="prestamo_id"
+                                                        value="<?= (int) $prestamo['id'] ?>">
+
+                                                    <button
+                                                        type="submit"
+                                                        class="btn btn-sm btn-primary">
+                                                        Entregar
+                                                    </button>
+
+                                                </form>
+                                            <?php elseif ($estado === 'entregado'): ?>
+
+                                                <!-- Botón para registrar la devolución -->
+                                                <form
+                                                    action="../actions/devolver_prestamo.php"
+                                                    method="POST"
+                                                    class="m-0"
+                                                    onsubmit="return confirm('¿Confirmas que el equipo fue devuelto?');">
+                                                    <input
+                                                        type="hidden"
+                                                        name="csrf_token"
+                                                        value="<?= htmlspecialchars(
+                                                                    $_SESSION['csrf_token'],
+                                                                    ENT_QUOTES,
+                                                                    'UTF-8'
+                                                                ) ?>">
+
+                                                    <input
+                                                        type="hidden"
+                                                        name="prestamo_id"
+                                                        value="<?= (int) $prestamo['id'] ?>">
+
+                                                    <button type="submit" class="btn btn-sm btn-warning">
+                                                        <i class="bi bi-arrow-return-left"></i> Registrar devolución
+                                                    </button>
+                                                </form>
+
+                                            <?php else: ?>
+
+                                                <span class="text-muted">—</span>
+
+                                            <?php endif; ?>
+
+                                        </td>
+
+                                    <?php endif; ?>
+
                                 </tr>
 
                             <?php endforeach; ?>
+
                         </tbody>
+
                     </table>
+
                 </div>
             </div>
         </div>

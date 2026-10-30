@@ -7,6 +7,10 @@ if (!isset($_SESSION['usuario'])) {
     header('Location: ../index.php?error=login_required');
     exit;
 }
+if (!in_array($_SESSION['usuario']['rol'] ?? '', ['admin', 'operador'], true)) {
+    header('Location: prestamos.php?error=forbidden');
+    exit;
+}
 
 require_once __DIR__ . '/../../config/database.php';
 
