@@ -1,19 +1,16 @@
 <?php
-
 declare(strict_types=1);
 
 session_start();
 
 require_once __DIR__ . '/../../config/database.php';
 
-// Solo se permite iniciar sesión mediante el formulario.
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: ../index.php');
     exit;
 }
 
-// Obtener y validar los datos enviados.
-$correo = trim($_POST['correo'] ?? '');
+$correo = strtolower(trim($_POST['correo'] ?? ''));
 $password = $_POST['password'] ?? '';
 
 if (
@@ -22,49 +19,140 @@ if (
     !is_string($password) ||
     $password === ''
 ) {
-    header('Location: ../index.php?error=1');
+    header('Location: ../index.php?error=invalid_input');
     exit;
 }
 
 try {
-    // Buscar la cuenta por correo.
-    $consulta = $pdo->prepare(
+    $pdo->beginTransaction();
+
+    // Crear el registro de intentos si todavía no existe.
+    $insertar = $pdo->prepare(
+        'INSERT INTO intentos_login (correo, intentos_fallidos, ultimo_intento)
+         VALUES (:correo, 0, NOW())
+         ON DUPLICATE KEY UPDATE correo = VALUES(correo)'
+    );
+
+    $insertar->execute(['correo' => $correo]);
+
+    // Bloquear el registro mientras se procesa el intento.
+    $consultaIntentos = $pdo->prepare(
+        'SELECT intentos_fallidos, bloqueado_hasta
+         FROM intentos_login
+         WHERE correo = :correo
+         FOR UPDATE'
+    );
+
+    $consultaIntentos->execute(['correo' => $correo]);
+    $intentos = $consultaIntentos->fetch(PDO::FETCH_ASSOC);
+
+    // Comprobar si el usuario todavía está bloqueado.
+    if (
+        !empty($intentos['bloqueado_hasta']) &&
+        strtotime($intentos['bloqueado_hasta']) > time()
+    ) {
+        $pdo->rollBack();
+
+        header('Location: ../index.php?error=login_locked');
+        exit;
+    }
+
+    // Si el bloqueo ya terminó, reiniciar el contador.
+    if (!empty($intentos['bloqueado_hasta'])) {
+        $reiniciar = $pdo->prepare(
+            'UPDATE intentos_login
+             SET intentos_fallidos = 0,
+                 bloqueado_hasta = NULL
+             WHERE correo = :correo'
+        );
+
+        $reiniciar->execute(['correo' => $correo]);
+        $intentos['intentos_fallidos'] = 0;
+    }
+
+    // Buscar al usuario.
+    $consultaUsuario = $pdo->prepare(
         'SELECT id, nombre, correo, password_hash, rol, activo
          FROM usuarios
          WHERE correo = :correo
          LIMIT 1'
     );
 
-    $consulta->execute(['correo' => $correo]);
-    $usuario = $consulta->fetch();
+    $consultaUsuario->execute(['correo' => $correo]);
+    $usuario = $consultaUsuario->fetch(PDO::FETCH_ASSOC);
 
-    // Verificar que exista, esté activo y la contraseña coincida.
+    // Verificar las credenciales.
     if (
-        !$usuario ||
-        (int) $usuario['activo'] !== 1 ||
-        !password_verify($password, $usuario['password_hash'])
+        $usuario &&
+        (int) $usuario['activo'] === 1 &&
+        password_verify($password, $usuario['password_hash'])
     ) {
-        header('Location: ../index.php?error=1');
+        // Inicio de sesión correcto: eliminar los intentos anteriores.
+        $eliminarIntentos = $pdo->prepare(
+            'DELETE FROM intentos_login WHERE correo = :correo'
+        );
+
+        $eliminarIntentos->execute(['correo' => $correo]);
+
+        $pdo->commit();
+
+        session_regenerate_id(true);
+
+        $_SESSION['usuario'] = [
+            'id' => (int) $usuario['id'],
+            'nombre' => $usuario['nombre'],
+            'correo' => $usuario['correo'],
+            'rol' => $usuario['rol'],
+        ];
+
+        header('Location: ../pages/dashboard.php');
         exit;
     }
 
-    // Evitar reutilizar el identificador anterior de sesión.
-    session_regenerate_id(true);
+    // Credenciales incorrectas: aumentar el contador.
+    $cantidadIntentos = (int) $intentos['intentos_fallidos'] + 1;
 
-    // Guardar solo los datos necesarios del usuario.
-    $_SESSION['usuario'] = [
-        'id' => (int) $usuario['id'],
-        'nombre' => $usuario['nombre'],
-        'correo' => $usuario['correo'],
-        'rol' => $usuario['rol'],
-    ];
+    if ($cantidadIntentos >= 3) {
+        $actualizar = $pdo->prepare(
+            'UPDATE intentos_login
+             SET intentos_fallidos = 3,
+                 bloqueado_hasta = DATE_ADD(NOW(), INTERVAL 5 MINUTE),
+                 ultimo_intento = NOW()
+             WHERE correo = :correo'
+        );
 
-    // Redirigir al panel del sistema.
-    header('Location: ../pages/dashboard.php');
+        $actualizar->execute(['correo' => $correo]);
+
+        $pdo->commit();
+
+        header('Location: ../index.php?error=login_locked');
+        exit;
+    }
+
+    $actualizar = $pdo->prepare(
+        'UPDATE intentos_login
+         SET intentos_fallidos = :intentos,
+             ultimo_intento = NOW()
+         WHERE correo = :correo'
+    );
+
+    $actualizar->execute([
+        'intentos' => $cantidadIntentos,
+        'correo' => $correo,
+    ]);
+
+    $pdo->commit();
+
+    header('Location: ../index.php?error=invalid_credentials');
     exit;
 
-} catch (PDOException $e) {
+} catch (Throwable $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+
     error_log($e->getMessage());
+
     http_response_code(500);
     exit('Ocurrió un error al procesar el inicio de sesión.');
 }

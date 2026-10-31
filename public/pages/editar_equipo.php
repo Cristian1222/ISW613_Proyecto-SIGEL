@@ -1,33 +1,36 @@
 <?php
+
 declare(strict_types=1);
 
 session_start();
 
-if (!isset($_SESSION['usuario'])) {
-    header('Location: ../index.php?error=login_required');
-    exit;
-}
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/csrf.php';
+require_once __DIR__ . '/../../includes/helpers.php';
 
-if (($_SESSION['usuario']['rol'] ?? '') !== 'admin') {
-    header('Location: equipos.php?error=forbidden');
-    exit;
-}
+// Solo el administrador puede editar equipos.
+requerirRol(['admin']);
 
-require_once __DIR__ . '/../../config/database.php';
-
+// Obtener y validar el ID del equipo.
 $id = filter_var(
-    $_POST['id'] ?? $_GET['id'] ?? null,
+    obtenerPost('id', obtenerGet('id')),
     FILTER_VALIDATE_INT,
     ['options' => ['min_range' => 1]]
 );
 
 if ($id === false || $id === null) {
-    header('Location: equipos.php');
-    exit;
+    redirigir('equipos.php?error=invalid_request');
 }
 
+// Si se envió el formulario, verificar el token CSRF.
+if (esPost()) {
+    requerirTokenCSRF();
+}
+
+// Conectar con la base de datos.
+require_once __DIR__ . '/../../config/database.php';
+
 $errores = [];
-$guardado = false;
 
 try {
     $consultaEquipo = $pdo->prepare(
@@ -36,12 +39,12 @@ try {
          FROM equipos
          WHERE id = :id'
     );
+
     $consultaEquipo->execute(['id' => $id]);
     $equipo = $consultaEquipo->fetch();
 
     if (!$equipo) {
-        http_response_code(404);
-        exit('El equipo solicitado no existe.');
+        redirigir('equipos.php?error=equipment_not_found');
     }
 
     $consultaCategorias = $pdo->query(
@@ -50,8 +53,10 @@ try {
          WHERE activo = 1
          ORDER BY nombre'
     );
+
     $categorias = $consultaCategorias->fetchAll();
 
+    // Cargar los datos actuales del equipo.
     $codigo = $equipo['codigo'];
     $nombre = $equipo['nombre'];
     $categoriaId = (string) $equipo['categoria_id'];
@@ -60,14 +65,15 @@ try {
     $cantidadDisponible = (string) $equipo['cantidad_disponible'];
     $estado = $equipo['estado'];
 
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        $codigo = trim($_POST['codigo'] ?? '');
-        $nombre = trim($_POST['nombre'] ?? '');
-        $categoriaId = $_POST['categoria_id'] ?? '';
-        $descripcion = trim($_POST['descripcion'] ?? '');
-        $cantidadTotal = $_POST['cantidad_total'] ?? '';
-        $cantidadDisponible = $_POST['cantidad_disponible'] ?? '';
-        $estado = $_POST['estado'] ?? '';
+    // Procesar el formulario.
+    if (esPost()) {
+        $codigo = trim((string) obtenerPost('codigo', ''));
+        $nombre = trim((string) obtenerPost('nombre', ''));
+        $categoriaId = (string) obtenerPost('categoria_id', '');
+        $descripcion = trim((string) obtenerPost('descripcion', ''));
+        $cantidadTotal = (string) obtenerPost('cantidad_total', '');
+        $cantidadDisponible = (string) obtenerPost('cantidad_disponible', '');
+        $estado = (string) obtenerPost('estado', '');
 
         if ($codigo === '' || strlen($codigo) > 50) {
             $errores[] = 'El código es obligatorio y no debe superar 50 caracteres.';
@@ -78,6 +84,7 @@ try {
         }
 
         $categoriaValida = filter_var($categoriaId, FILTER_VALIDATE_INT);
+
         $idsCategorias = array_map(
             'intval',
             array_column($categorias, 'id')
@@ -127,6 +134,7 @@ try {
             $errores[] = 'La cantidad disponible no puede superar la cantidad total.';
         }
 
+        // Actualizar si no existen errores.
         if ($errores === []) {
             $sql = 'UPDATE equipos
                     SET categoria_id = :categoria_id,
@@ -140,6 +148,7 @@ try {
 
             try {
                 $actualizar = $pdo->prepare($sql);
+
                 $actualizar->execute([
                     'categoria_id' => (int) $categoriaId,
                     'codigo' => $codigo,
@@ -151,8 +160,8 @@ try {
                     'id' => $id,
                 ]);
 
-                header('Location: equipos.php?success=equipment_updated');
-                exit;
+                redirigir('equipos.php?success=equipment_updated');
+
             } catch (PDOException $e) {
                 if ($e->getCode() === '23000') {
                     $errores[] = 'Ese código ya está registrado en otro equipo.';
@@ -162,28 +171,35 @@ try {
             }
         }
     }
+
 } catch (PDOException $e) {
     error_log($e->getMessage());
     http_response_code(500);
     exit('Ocurrió un error al consultar o actualizar el equipo.');
 }
 
+$titulo = 'Editar equipo | SIGEL';
+
 require_once __DIR__ . '/../../includes/header.php';
 require_once __DIR__ . '/../../includes/alerts.php';
+
+$tokenCSRF = generarTokenCSRF();
 ?>
 
 <div class="container py-5">
     <h1 class="h3 mb-2">Editar equipo</h1>
+
     <p class="text-muted mb-4">
         Modifica los datos del equipo seleccionado.
     </p>
+
     <?php renderAlert(); ?>
 
     <?php if ($errores !== []): ?>
         <div class="alert alert-danger">
             <ul class="mb-0">
                 <?php foreach ($errores as $error): ?>
-                    <li><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></li>
+                    <li><?= escapar($error) ?></li>
                 <?php endforeach; ?>
             </ul>
         </div>
@@ -191,12 +207,22 @@ require_once __DIR__ . '/../../includes/alerts.php';
 
     <div class="card shadow-sm">
         <div class="card-body p-4">
+
             <form method="POST" action="editar_equipo.php">
+
                 <input type="hidden" name="id" value="<?= (int) $id ?>">
 
+                <input
+                    type="hidden"
+                    name="csrf_token"
+                    value="<?= escapar($tokenCSRF) ?>"
+                >
+
                 <div class="row g-3">
+
                     <div class="col-md-6">
                         <label for="codigo" class="form-label">Código *</label>
+
                         <input
                             type="text"
                             class="form-control"
@@ -204,12 +230,13 @@ require_once __DIR__ . '/../../includes/alerts.php';
                             name="codigo"
                             maxlength="50"
                             required
-                            value="<?= htmlspecialchars($codigo, ENT_QUOTES, 'UTF-8') ?>"
+                            value="<?= escapar($codigo) ?>"
                         >
                     </div>
 
                     <div class="col-md-6">
                         <label for="nombre" class="form-label">Nombre *</label>
+
                         <input
                             type="text"
                             class="form-control"
@@ -217,19 +244,25 @@ require_once __DIR__ . '/../../includes/alerts.php';
                             name="nombre"
                             maxlength="150"
                             required
-                            value="<?= htmlspecialchars($nombre, ENT_QUOTES, 'UTF-8') ?>"
+                            value="<?= escapar($nombre) ?>"
                         >
                     </div>
 
                     <div class="col-md-6">
                         <label for="categoria_id" class="form-label">Categoría *</label>
-                        <select class="form-select" id="categoria_id" name="categoria_id" required>
+
+                        <select
+                            class="form-select"
+                            id="categoria_id"
+                            name="categoria_id"
+                            required
+                        >
                             <?php foreach ($categorias as $categoria): ?>
                                 <option
                                     value="<?= (int) $categoria['id'] ?>"
                                     <?= (string) $categoriaId === (string) $categoria['id'] ? 'selected' : '' ?>
                                 >
-                                    <?= htmlspecialchars($categoria['nombre'], ENT_QUOTES, 'UTF-8') ?>
+                                    <?= escapar($categoria['nombre']) ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
@@ -237,15 +270,30 @@ require_once __DIR__ . '/../../includes/alerts.php';
 
                     <div class="col-md-6">
                         <label for="estado" class="form-label">Estado *</label>
-                        <select class="form-select" id="estado" name="estado" required>
-                            <option value="activo" <?= $estado === 'activo' ? 'selected' : '' ?>>Activo</option>
-                            <option value="mantenimiento" <?= $estado === 'mantenimiento' ? 'selected' : '' ?>>Mantenimiento</option>
-                            <option value="inactivo" <?= $estado === 'inactivo' ? 'selected' : '' ?>>Inactivo</option>
+
+                        <select
+                            class="form-select"
+                            id="estado"
+                            name="estado"
+                            required
+                        >
+                            <option value="activo" <?= $estado === 'activo' ? 'selected' : '' ?>>
+                                Activo
+                            </option>
+
+                            <option value="mantenimiento" <?= $estado === 'mantenimiento' ? 'selected' : '' ?>>
+                                Mantenimiento
+                            </option>
+
+                            <option value="inactivo" <?= $estado === 'inactivo' ? 'selected' : '' ?>>
+                                Inactivo
+                            </option>
                         </select>
                     </div>
 
                     <div class="col-md-6">
                         <label for="cantidad_total" class="form-label">Cantidad total *</label>
+
                         <input
                             type="number"
                             class="form-control"
@@ -253,12 +301,13 @@ require_once __DIR__ . '/../../includes/alerts.php';
                             name="cantidad_total"
                             min="1"
                             required
-                            value="<?= htmlspecialchars((string) $cantidadTotal, ENT_QUOTES, 'UTF-8') ?>"
+                            value="<?= escapar($cantidadTotal) ?>"
                         >
                     </div>
 
                     <div class="col-md-6">
                         <label for="cantidad_disponible" class="form-label">Cantidad disponible *</label>
+
                         <input
                             type="number"
                             class="form-control"
@@ -266,22 +315,25 @@ require_once __DIR__ . '/../../includes/alerts.php';
                             name="cantidad_disponible"
                             min="0"
                             required
-                            value="<?= htmlspecialchars((string) $cantidadDisponible, ENT_QUOTES, 'UTF-8') ?>"
+                            value="<?= escapar($cantidadDisponible) ?>"
                         >
                     </div>
 
                     <div class="col-12">
                         <label for="descripcion" class="form-label">Descripción</label>
+
                         <textarea
                             class="form-control"
                             id="descripcion"
                             name="descripcion"
                             rows="3"
-                        ><?= htmlspecialchars($descripcion, ENT_QUOTES, 'UTF-8') ?></textarea>
+                        ><?= escapar($descripcion) ?></textarea>
                     </div>
+
                 </div>
 
                 <div class="d-flex flex-wrap gap-2 mt-4">
+
                     <button type="submit" class="btn btn-primary">
                         Guardar cambios
                     </button>
@@ -289,8 +341,11 @@ require_once __DIR__ . '/../../includes/alerts.php';
                     <a href="equipos.php" class="btn btn-outline-secondary">
                         Cancelar
                     </a>
+
                 </div>
+
             </form>
+
         </div>
     </div>
 </div>

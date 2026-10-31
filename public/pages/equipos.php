@@ -1,24 +1,28 @@
 <?php
+
 declare(strict_types=1);
 
 session_start();
 
-if (!isset($_SESSION['usuario'])) {
-    header('Location: ../index.php?error=login_required');
-    exit;
-}
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/csrf.php';
+require_once __DIR__ . '/../../includes/helpers.php';
 
-$rol = $_SESSION['usuario']['rol'] ?? '';
-$esAdmin = $rol === 'admin';
-$puedeGestionar = in_array($rol, ['admin', 'operador'], true);
+// Solo usuarios autenticados pueden consultar el inventario.
+requerirAutenticacion();
 
-if (!isset($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
+$rol = obtenerUsuario()['rol'] ?? '';
+$esAdmin = tieneRol(['admin']);
+$puedeGestionar = tieneRol(['admin', 'operador']);
+
+// Generar token CSRF para las acciones del inventario.
+$tokenCSRF = generarTokenCSRF();
 
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/header.php';
 require_once __DIR__ . '/../../includes/alerts.php';
+
+$errorConsulta = false;
 
 try {
     $sql = "SELECT
@@ -35,7 +39,8 @@ try {
             ORDER BY e.id DESC";
 
     $consulta = $pdo->query($sql);
-    $equipos = $consulta->fetchAll();
+    $equipos = $consulta->fetchAll(PDO::FETCH_ASSOC);
+
 } catch (PDOException $e) {
     error_log($e->getMessage());
     $equipos = [];
@@ -50,12 +55,14 @@ try {
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
         <div>
             <h1 class="h3">Consulta de equipos</h1>
+
             <p class="text-muted mb-0">
                 Consulta el inventario y la disponibilidad de los equipos registrados en SIGEL.
             </p>
         </div>
 
         <div class="d-flex flex-wrap gap-2">
+
             <?php if ($esAdmin): ?>
                 <a href="crear_equipo.php" class="btn btn-primary">
                     + Registrar equipo
@@ -65,10 +72,11 @@ try {
             <a href="dashboard.php" class="btn btn-outline-secondary">
                 Volver al panel
             </a>
+
         </div>
     </div>
 
-    <?php if (isset($errorConsulta)): ?>
+    <?php if ($errorConsulta): ?>
 
         <div class="alert alert-danger">
             No se pudo cargar el inventario. Intenta nuevamente.
@@ -83,7 +91,9 @@ try {
     <?php else: ?>
 
         <div class="table-responsive">
+
             <table class="table table-striped table-hover align-middle">
+
                 <thead class="table-dark">
                     <tr>
                         <th>Código</th>
@@ -100,31 +110,16 @@ try {
                 </thead>
 
                 <tbody>
+
                     <?php foreach ($equipos as $equipo): ?>
+
                         <tr>
-                            <td>
-                                <?= htmlspecialchars(
-                                    $equipo['codigo'],
-                                    ENT_QUOTES,
-                                    'UTF-8'
-                                ) ?>
-                            </td>
 
-                            <td>
-                                <?= htmlspecialchars(
-                                    $equipo['nombre'],
-                                    ENT_QUOTES,
-                                    'UTF-8'
-                                ) ?>
-                            </td>
+                            <td><?= escapar($equipo['codigo']) ?></td>
 
-                            <td>
-                                <?= htmlspecialchars(
-                                    $equipo['categoria'],
-                                    ENT_QUOTES,
-                                    'UTF-8'
-                                ) ?>
-                            </td>
+                            <td><?= escapar($equipo['nombre']) ?></td>
+
+                            <td><?= escapar($equipo['categoria']) ?></td>
 
                             <td><?= (int) $equipo['cantidad_total'] ?></td>
 
@@ -140,18 +135,17 @@ try {
                                 ?>
 
                                 <span class="badge text-bg-<?= $claseEstado ?>">
-                                    <?= htmlspecialchars(
-                                        ucfirst($equipo['estado']),
-                                        ENT_QUOTES,
-                                        'UTF-8'
-                                    ) ?>
+                                    <?= escapar(ucfirst($equipo['estado'])) ?>
                                 </span>
                             </td>
 
                             <?php if ($puedeGestionar): ?>
+
                                 <td>
                                     <div class="d-flex flex-wrap gap-2">
+
                                         <?php if ($esAdmin): ?>
+
                                             <a
                                                 href="editar_equipo.php?id=<?= (int) $equipo['id'] ?>"
                                                 class="btn btn-sm btn-outline-primary">
@@ -171,27 +165,31 @@ try {
                                                 <input
                                                     type="hidden"
                                                     name="csrf_token"
-                                                    value="<?= htmlspecialchars(
-                                                        $_SESSION['csrf_token'],
-                                                        ENT_QUOTES,
-                                                        'UTF-8'
-                                                    ) ?>">
+                                                    value="<?= escapar($tokenCSRF) ?>">
 
                                                 <button
                                                     type="submit"
                                                     class="btn btn-sm btn-outline-danger">
                                                     Eliminar
                                                 </button>
+
                                             </form>
+
                                         <?php endif; ?>
+
                                     </div>
                                 </td>
+
                             <?php endif; ?>
 
                         </tr>
+
                     <?php endforeach; ?>
+
                 </tbody>
+
             </table>
+
         </div>
 
     <?php endif; ?>

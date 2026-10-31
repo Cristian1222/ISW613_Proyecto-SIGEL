@@ -111,3 +111,11 @@ VALUES
      'Equipos de proyeccion'),
     ('Accesorios',
      'Teclados, ratones y otros accesorios');
+
+     CREATE TABLE intentos_login (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    correo VARCHAR(150) NOT NULL UNIQUE,
+    intentos_fallidos TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    bloqueado_hasta DATETIME NULL,
+    ultimo_intento DATETIME NULL
+);

@@ -4,17 +4,18 @@ declare(strict_types=1);
 
 session_start();
 
-if (!isset($_SESSION['usuario'])) {
-    header('Location: ../index.php?error=login_required');
-    exit;
-}
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/csrf.php';
+require_once __DIR__ . '/../../includes/helpers.php';
 
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
+// Permitir el acceso a todos los usuarios autenticados.
+requerirAutenticacion();
 
-$rol = $_SESSION['usuario']['rol'] ?? '';
-$puedeGestionar = in_array($rol, ['admin', 'operador'], true);
+// Obtener permisos según el rol.
+$puedeGestionar = tieneRol(['admin', 'operador']);
+
+// Generar el token CSRF para los formularios.
+$tokenCSRF = generarTokenCSRF();
 
 require_once __DIR__ . '/../../config/database.php';
 
@@ -48,6 +49,7 @@ try {
 
     $consulta = $pdo->query($sql);
     $prestamos = $consulta->fetchAll(PDO::FETCH_ASSOC);
+
 } catch (PDOException $e) {
     error_log($e->getMessage());
     $errorConsulta = true;
@@ -80,6 +82,7 @@ $clasesEstado = [
 
         <div>
             <h1 class="h3 mb-1">Gestión de préstamos</h1>
+
             <p class="text-muted mb-0">
                 Consulta y administra los préstamos de equipos.
             </p>
@@ -93,7 +96,7 @@ $clasesEstado = [
                 </a>
             <?php endif; ?>
 
-            <a href="../index.php" class="btn btn-outline-secondary">
+            <a href="dashboard.php" class="btn btn-outline-secondary">
                 Volver al panel
             </a>
 
@@ -145,75 +148,35 @@ $clasesEstado = [
 
                                 <?php
                                 $estado = $prestamo['estado'];
-
-                                $clase = $clasesEstado[$estado]
-                                    ?? 'bg-secondary';
+                                $clase = $clasesEstado[$estado] ?? 'bg-secondary';
                                 ?>
 
                                 <tr>
 
-                                    <td>
-                                        <?= (int) $prestamo['id'] ?>
-                                    </td>
+                                    <td><?= (int) $prestamo['id'] ?></td>
 
-                                    <td>
-                                        <?= htmlspecialchars(
-                                            $prestamo['profesor'],
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?>
-                                    </td>
+                                    <td><?= escapar($prestamo['profesor']) ?></td>
 
-                                    <td>
-                                        <?= htmlspecialchars(
-                                            $prestamo['operador'],
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?>
-                                    </td>
+                                    <td><?= escapar($prestamo['operador']) ?></td>
 
-                                    <td>
-                                        <?= htmlspecialchars(
-                                            $prestamo['fecha_inicio'],
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?>
-                                    </td>
+                                    <td><?= escapar($prestamo['fecha_inicio']) ?></td>
 
-                                    <td>
-                                        <?= htmlspecialchars(
-                                            $prestamo['fecha_devolucion_prevista'],
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?>
-                                    </td>
+                                    <td><?= escapar($prestamo['fecha_devolucion_prevista']) ?></td>
 
                                     <td>
                                         <?= $prestamo['fecha_devolucion_real']
-                                            ? htmlspecialchars(
-                                                $prestamo['fecha_devolucion_real'],
-                                                ENT_QUOTES,
-                                                'UTF-8'
-                                            )
+                                            ? escapar($prestamo['fecha_devolucion_real'])
                                             : '—' ?>
                                     </td>
 
                                     <td>
-                                        <span class="badge <?= $clase ?>">
-                                            <?= htmlspecialchars(
-                                                $estados[$estado] ?? ucfirst($estado),
-                                                ENT_QUOTES,
-                                                'UTF-8'
-                                            ) ?>
+                                        <span class="badge <?= escapar($clase) ?>">
+                                            <?= escapar($estados[$estado] ?? ucfirst($estado)) ?>
                                         </span>
                                     </td>
 
                                     <td>
-                                        <?= htmlspecialchars(
-                                            $prestamo['observaciones'] ?? '',
-                                            ENT_QUOTES,
-                                            'UTF-8'
-                                        ) ?: '—' ?>
+                                        <?= escapar($prestamo['observaciones'] ?? '') ?: '—' ?>
                                     </td>
 
                                     <?php if ($puedeGestionar): ?>
@@ -222,30 +185,26 @@ $clasesEstado = [
 
                                             <?php if ($estado === 'pendiente'): ?>
 
-                                                <!-- Botón para aprobar -->
                                                 <form
                                                     action="../actions/aprobar_prestamo.php"
                                                     method="POST"
                                                     class="mb-1"
-                                                    onsubmit="return confirm('¿Deseas aprobar este préstamo?');">
+                                                    onsubmit="return confirm('¿Deseas aprobar este préstamo?');"
+                                                >
 
                                                     <input
                                                         type="hidden"
                                                         name="csrf_token"
-                                                        value="<?= htmlspecialchars(
-                                                                    $_SESSION['csrf_token'],
-                                                                    ENT_QUOTES,
-                                                                    'UTF-8'
-                                                                ) ?>">
+                                                        value="<?= escapar($tokenCSRF) ?>"
+                                                    >
 
                                                     <input
                                                         type="hidden"
                                                         name="prestamo_id"
-                                                        value="<?= (int) $prestamo['id'] ?>">
+                                                        value="<?= (int) $prestamo['id'] ?>"
+                                                    >
 
-                                                    <button
-                                                        type="submit"
-                                                        class="btn btn-sm btn-success">
+                                                    <button type="submit" class="btn btn-sm btn-success">
                                                         Aprobar
                                                     </button>
 
@@ -253,58 +212,56 @@ $clasesEstado = [
 
                                             <?php elseif ($estado === 'aprobado'): ?>
 
-                                                <!-- Botón para entregar -->
                                                 <form
                                                     action="../actions/entregar_prestamo.php"
                                                     method="POST"
-                                                    onsubmit="return confirm('¿Deseas registrar la entrega de este préstamo?');">
+                                                    onsubmit="return confirm('¿Deseas registrar la entrega de este préstamo?');"
+                                                >
 
                                                     <input
                                                         type="hidden"
                                                         name="csrf_token"
-                                                        value="<?= htmlspecialchars(
-                                                                    $_SESSION['csrf_token'],
-                                                                    ENT_QUOTES,
-                                                                    'UTF-8'
-                                                                ) ?>">
+                                                        value="<?= escapar($tokenCSRF) ?>"
+                                                    >
 
                                                     <input
                                                         type="hidden"
                                                         name="prestamo_id"
-                                                        value="<?= (int) $prestamo['id'] ?>">
+                                                        value="<?= (int) $prestamo['id'] ?>"
+                                                    >
 
-                                                    <button
-                                                        type="submit"
-                                                        class="btn btn-sm btn-primary">
+                                                    <button type="submit" class="btn btn-sm btn-primary">
                                                         Entregar
                                                     </button>
 
                                                 </form>
+
                                             <?php elseif ($estado === 'entregado'): ?>
 
-                                                <!-- Botón para registrar la devolución -->
                                                 <form
                                                     action="../actions/devolver_prestamo.php"
                                                     method="POST"
                                                     class="m-0"
-                                                    onsubmit="return confirm('¿Confirmas que el equipo fue devuelto?');">
+                                                    onsubmit="return confirm('¿Confirmas que el equipo fue devuelto?');"
+                                                >
+
                                                     <input
                                                         type="hidden"
                                                         name="csrf_token"
-                                                        value="<?= htmlspecialchars(
-                                                                    $_SESSION['csrf_token'],
-                                                                    ENT_QUOTES,
-                                                                    'UTF-8'
-                                                                ) ?>">
+                                                        value="<?= escapar($tokenCSRF) ?>"
+                                                    >
 
                                                     <input
                                                         type="hidden"
                                                         name="prestamo_id"
-                                                        value="<?= (int) $prestamo['id'] ?>">
+                                                        value="<?= (int) $prestamo['id'] ?>"
+                                                    >
 
                                                     <button type="submit" class="btn btn-sm btn-warning">
-                                                        <i class="bi bi-arrow-return-left"></i> Registrar devolución
+                                                        <i class="bi bi-arrow-return-left"></i>
+                                                        Registrar devolución
                                                     </button>
+
                                                 </form>
 
                                             <?php else: ?>

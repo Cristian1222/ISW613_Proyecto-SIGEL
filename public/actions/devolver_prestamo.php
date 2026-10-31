@@ -1,41 +1,38 @@
 <?php
+
 declare(strict_types=1);
 
 session_start();
 
-if (!isset($_SESSION['usuario'])) {
-    header('Location: ../index.php?error=login_required');
-    exit;
+// Cargar funciones auxiliares.
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/csrf.php';
+require_once __DIR__ . '/../../includes/helpers.php';
+
+// Solo administradores y operadores pueden registrar devoluciones.
+requerirRol(['admin', 'operador']);
+
+// La operación solo se permite mediante POST.
+if (!esPost()) {
+    redirigir('../pages/prestamos.php?error=invalid_request');
 }
 
-$rol = $_SESSION['usuario']['rol'] ?? '';
+// Verificar el token CSRF.
+requerirTokenCSRF();
 
-if (!in_array($rol, ['admin', 'operador'], true)) {
-    header('Location: ../pages/prestamos.php?error=forbidden');
-    exit;
+// Validar el ID del préstamo.
+$prestamoId = filter_var(
+    obtenerPost('prestamo_id'),
+    FILTER_VALIDATE_INT,
+    ['options' => ['min_range' => 1]]
+);
+
+if ($prestamoId === false || $prestamoId === null) {
+    redirigir('../pages/prestamos.php?error=invalid_request');
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: ../pages/prestamos.php?error=invalid_request');
-    exit;
-}
-
+// Conectar con la base de datos.
 require_once __DIR__ . '/../../config/database.php';
-
-if (
-    !isset($_POST['csrf_token'], $_SESSION['csrf_token']) ||
-    !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])
-) {
-    header('Location: ../pages/prestamos.php?error=invalid_request');
-    exit;
-}
-
-$prestamoId = filter_input(INPUT_POST, 'prestamo_id', FILTER_VALIDATE_INT);
-
-if (!$prestamoId || $prestamoId <= 0) {
-    header('Location: ../pages/prestamos.php?error=invalid_request');
-    exit;
-}
 
 try {
     $pdo->beginTransaction();
@@ -47,13 +44,13 @@ try {
         WHERE id = :id
         FOR UPDATE
     ");
+
     $consulta->execute(['id' => $prestamoId]);
     $prestamo = $consulta->fetch(PDO::FETCH_ASSOC);
 
     if (!$prestamo || $prestamo['estado'] !== 'entregado') {
         $pdo->rollBack();
-        header('Location: ../pages/prestamos.php?error=invalid_request');
-        exit;
+        redirigir('../pages/prestamos.php?error=invalid_request');
     }
 
     // Consultar los equipos incluidos en el préstamo.
@@ -63,26 +60,26 @@ try {
         WHERE prestamo_id = :prestamo_id
         ORDER BY equipo_id
     ");
+
     $consulta->execute(['prestamo_id' => $prestamoId]);
     $detalles = $consulta->fetchAll(PDO::FETCH_ASSOC);
 
     if (empty($detalles)) {
         $pdo->rollBack();
-        header('Location: ../pages/prestamos.php?error=invalid_request');
-        exit;
+        redirigir('../pages/prestamos.php?error=invalid_request');
     }
 
     // Devolver las unidades al inventario.
+    $actualizarEquipo = $pdo->prepare("
+        UPDATE equipos
+        SET cantidad_disponible = cantidad_disponible + :cantidad
+        WHERE id = :equipo_id
+          AND cantidad_disponible + :cantidad_validar <= cantidad_total
+    ");
+
     foreach ($detalles as $detalle) {
         $equipoId = (int) $detalle['equipo_id'];
         $cantidad = (int) $detalle['cantidad'];
-
-        $actualizarEquipo = $pdo->prepare("
-            UPDATE equipos
-            SET cantidad_disponible = cantidad_disponible + :cantidad
-            WHERE id = :equipo_id
-              AND cantidad_disponible + :cantidad_validar <= cantidad_total
-        ");
 
         $actualizarEquipo->execute([
             'cantidad' => $cantidad,
@@ -112,18 +109,18 @@ try {
         throw new RuntimeException('No fue posible actualizar el préstamo.');
     }
 
+    // Confirmar todos los cambios.
     $pdo->commit();
 
-    header('Location: ../pages/prestamos.php?success=loan_returned');
-    exit;
+    redirigir('../pages/prestamos.php?success=loan_returned');
 
 } catch (Throwable $e) {
+
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
 
     error_log($e->getMessage());
 
-    header('Location: ../pages/prestamos.php?error=server_error');
-    exit;
+    redirigir('../pages/prestamos.php?error=server_error');
 }

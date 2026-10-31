@@ -4,46 +4,31 @@ declare(strict_types=1);
 
 session_start();
 
-// Verificar que el usuario haya iniciado sesión.
-if (!isset($_SESSION['usuario'])) {
-    header('Location: ../index.php?error=login_required');
-    exit;
-}
+// Cargar funciones de seguridad y utilidades.
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/csrf.php';
+require_once __DIR__ . '/../../includes/helpers.php';
 
 // Solo el administrador puede eliminar equipos.
-if (($_SESSION['usuario']['rol'] ?? '') !== 'admin') {
-    header('Location: ../pages/equipos.php?error=forbidden');
-    exit;
-}
+requerirRol(['admin']);
 
 // La eliminación solo se permite mediante POST.
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: ../pages/equipos.php?error=invalid_request');
-    exit;
+if (!esPost()) {
+    redirigir('../pages/equipos.php?error=invalid_request');
 }
 
-// Verificar el token de seguridad del formulario.
-$token = $_POST['csrf_token'] ?? '';
-
-if (
-    !is_string($token) ||
-    !isset($_SESSION['csrf_token']) ||
-    !hash_equals($_SESSION['csrf_token'], $token)
-) {
-    header('Location: ../pages/equipos.php?error=invalid_request');
-    exit;
-}
+// Verificar el token CSRF.
+requerirTokenCSRF();
 
 // Validar el ID del equipo.
 $id = filter_var(
-    $_POST['id'] ?? null,
+    obtenerPost('id'),
     FILTER_VALIDATE_INT,
     ['options' => ['min_range' => 1]]
 );
 
 if ($id === false || $id === null) {
-    header('Location: ../pages/equipos.php?error=invalid_request');
-    exit;
+    redirigir('../pages/equipos.php?error=invalid_request');
 }
 
 // Conectar con la base de datos.
@@ -58,13 +43,11 @@ try {
 
     // Comprobar si se eliminó algún registro.
     if ($consulta->rowCount() === 0) {
-        header('Location: ../pages/equipos.php?error=equipment_not_found');
-        exit;
+        redirigir('../pages/equipos.php?error=equipment_not_found');
     }
 
     // Eliminación exitosa.
-    header('Location: ../pages/equipos.php?success=equipment_deleted');
-    exit;
+    redirigir('../pages/equipos.php?success=equipment_deleted');
 
 } catch (PDOException $e) {
     error_log($e->getMessage());
@@ -72,12 +55,9 @@ try {
     // La base de datos puede impedir la eliminación
     // si existen préstamos relacionados con el equipo.
     if ($e->getCode() === '23000') {
-        header('Location: ../pages/equipos.php?error=equipment_related');
-        exit;
+        redirigir('../pages/equipos.php?error=equipment_related');
     }
 
-    // Error inesperado del servidor.
     error_log('Error al eliminar un equipo en SIGEL.');
-    header('Location: ../pages/equipos.php?error=server_error');
-    exit;
+    redirigir('../pages/equipos.php?error=server_error');
 }
