@@ -3,15 +3,18 @@ declare(strict_types=1);
 
 session_start();
 
-if (!isset($_SESSION['usuario'])) {
-    header('Location: ../index.php');
-    exit;
-}
-
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/csrf.php';
+require_once __DIR__ . '/../../includes/helpers.php';
+require_once __DIR__ . '/../../includes/imagenes.php';
 require_once __DIR__ . '/../../config/database.php';
 
+requerirAutenticacion();
+requerirRol(['admin', 'operador']);
+
+$tokenCSRF = generarTokenCSRF();
+
 $errores = [];
-$guardado = false;
 
 $codigo = '';
 $nombre = '';
@@ -31,7 +34,9 @@ try {
 
     $categorias = $consultaCategorias->fetchAll();
 
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (esPost()) {
+        requerirTokenCSRF();
+
         $codigo = trim($_POST['codigo'] ?? '');
         $nombre = trim($_POST['nombre'] ?? '');
         $categoriaId = $_POST['categoria_id'] ?? '';
@@ -59,9 +64,7 @@ try {
             $errores[] = 'Selecciona una categoría válida.';
         }
 
-        if (
-            !in_array($estado, ['activo', 'mantenimiento', 'inactivo'], true)
-        ) {
+        if (!in_array($estado, ['activo', 'mantenimiento', 'inactivo'], true)) {
             $errores[] = 'Selecciona un estado válido.';
         }
 
@@ -93,26 +96,51 @@ try {
             $errores[] = 'La cantidad disponible no puede superar la cantidad total.';
         }
 
+        // Procesar la imagen únicamente si se seleccionó una.
+        $archivoImagen = $_FILES['imagen'] ?? null;
+
+        if (
+            $archivoImagen !== null &&
+            $archivoImagen['error'] !== UPLOAD_ERR_NO_FILE
+        ) {
+            $resultadoImagen = guardarImagenEquipo($archivoImagen);
+
+            if (isset($resultadoImagen['error'])) {
+                $mensajesImagen = [
+                    'invalid_image' => 'El archivo seleccionado no es una imagen válida. Usa JPG, PNG o WebP.',
+                    'image_too_large' => 'La imagen supera el tamaño máximo permitido de 2 MB.',
+                    'image_upload_failed' => 'No se pudo subir la imagen. Inténtalo nuevamente.',
+                ];
+
+                $errores[] = $mensajesImagen[$resultadoImagen['error']]
+                    ?? 'Ocurrió un problema al subir la imagen.';
+            }
+        }
+
         if ($errores === []) {
-            $sql = "INSERT INTO equipos (
-                        categoria_id,
-                        codigo,
-                        nombre,
-                        descripcion,
-                        cantidad_total,
-                        cantidad_disponible,
-                        estado
-                    ) VALUES (
-                        :categoria_id,
-                        :codigo,
-                        :nombre,
-                        :descripcion,
-                        :cantidad_total,
-                        :cantidad_disponible,
-                        :estado
-                    )";
+            $nombreImagen = $resultadoImagen['filename'] ?? null;
 
             try {
+                $sql = "INSERT INTO equipos (
+                            categoria_id,
+                            codigo,
+                            nombre,
+                            descripcion,
+                            cantidad_total,
+                            cantidad_disponible,
+                            estado,
+                            imagen
+                        ) VALUES (
+                            :categoria_id,
+                            :codigo,
+                            :nombre,
+                            :descripcion,
+                            :cantidad_total,
+                            :cantidad_disponible,
+                            :estado,
+                            :imagen
+                        )";
+
                 $insertar = $pdo->prepare($sql);
                 $insertar->execute([
                     'categoria_id' => (int) $categoriaId,
@@ -122,25 +150,24 @@ try {
                     'cantidad_total' => (int) $cantidadTotal,
                     'cantidad_disponible' => (int) $cantidadDisponible,
                     'estado' => $estado,
+                    'imagen' => $nombreImagen,
                 ]);
 
-                header('Location: crear_equipo.php?success=equipment_created');
-                exit;
-
-                $codigo = '';
-                $nombre = '';
-                $categoriaId = '';
-                $descripcion = '';
-                $cantidadTotal = '1';
-                $cantidadDisponible = '1';
-                $estado = 'activo';
+                redirigir('crear_equipo.php?success=equipment_created');
             } catch (PDOException $e) {
+                // Si falla el registro, eliminar la imagen recién subida.
+                if ($nombreImagen !== null) {
+                    eliminarImagenEquipo($nombreImagen);
+                }
+
                 if ($e->getCode() === '23000') {
                     $errores[] = 'Ese código ya existe. Escribe un código diferente.';
                 } else {
                     throw $e;
                 }
             }
+        } elseif (isset($resultadoImagen['filename'])) {
+            eliminarImagenEquipo($resultadoImagen['filename']);
         }
     }
 } catch (PDOException $e) {
@@ -168,7 +195,7 @@ require_once __DIR__ . '/../../includes/alerts.php';
             <p class="fw-bold mb-2">Revisa lo siguiente:</p>
             <ul class="mb-0">
                 <?php foreach ($errores as $error): ?>
-                    <li><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></li>
+                    <li><?= escapar($error) ?></li>
                 <?php endforeach; ?>
             </ul>
         </div>
@@ -182,7 +209,17 @@ require_once __DIR__ . '/../../includes/alerts.php';
     <?php else: ?>
         <div class="card shadow-sm">
             <div class="card-body p-4">
-                <form method="POST" action="crear_equipo.php">
+                <form
+                    method="POST"
+                    action="crear_equipo.php"
+                    enctype="multipart/form-data"
+                >
+                    <input
+                        type="hidden"
+                        name="csrf_token"
+                        value="<?= escapar($tokenCSRF) ?>"
+                    >
+
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label for="codigo" class="form-label">Código *</label>
@@ -193,7 +230,7 @@ require_once __DIR__ . '/../../includes/alerts.php';
                                 name="codigo"
                                 maxlength="50"
                                 required
-                                value="<?= htmlspecialchars($codigo, ENT_QUOTES, 'UTF-8') ?>"
+                                value="<?= escapar($codigo) ?>"
                                 placeholder="Ej. EQ-001"
                             >
                         </div>
@@ -207,7 +244,7 @@ require_once __DIR__ . '/../../includes/alerts.php';
                                 name="nombre"
                                 maxlength="150"
                                 required
-                                value="<?= htmlspecialchars($nombre, ENT_QUOTES, 'UTF-8') ?>"
+                                value="<?= escapar($nombre) ?>"
                                 placeholder="Ej. Laptop Dell"
                             >
                         </div>
@@ -226,7 +263,7 @@ require_once __DIR__ . '/../../includes/alerts.php';
                                         value="<?= (int) $categoria['id'] ?>"
                                         <?= (string) $categoriaId === (string) $categoria['id'] ? 'selected' : '' ?>
                                     >
-                                        <?= htmlspecialchars($categoria['nombre'], ENT_QUOTES, 'UTF-8') ?>
+                                        <?= escapar($categoria['nombre']) ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -250,7 +287,7 @@ require_once __DIR__ . '/../../includes/alerts.php';
                                 name="cantidad_total"
                                 min="1"
                                 required
-                                value="<?= htmlspecialchars((string) $cantidadTotal, ENT_QUOTES, 'UTF-8') ?>"
+                                value="<?= escapar((string) $cantidadTotal) ?>"
                             >
                         </div>
 
@@ -263,7 +300,7 @@ require_once __DIR__ . '/../../includes/alerts.php';
                                 name="cantidad_disponible"
                                 min="0"
                                 required
-                                value="<?= htmlspecialchars((string) $cantidadDisponible, ENT_QUOTES, 'UTF-8') ?>"
+                                value="<?= escapar((string) $cantidadDisponible) ?>"
                             >
                         </div>
 
@@ -275,7 +312,22 @@ require_once __DIR__ . '/../../includes/alerts.php';
                                 name="descripcion"
                                 rows="3"
                                 placeholder="Detalles adicionales del equipo"
-                            ><?= htmlspecialchars($descripcion, ENT_QUOTES, 'UTF-8') ?></textarea>
+                            ><?= escapar($descripcion) ?></textarea>
+                        </div>
+
+                        <div class="col-12">
+                            <label for="imagen" class="form-label">Imagen del equipo</label>
+                            <input
+                                type="file"
+                                class="form-control"
+                                id="imagen"
+                                name="imagen"
+                                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                            >
+                            <div class="form-text">
+                                Formatos permitidos: JPG, PNG y WebP. Tamaño máximo: 2 MB.
+                                Este campo es opcional.
+                            </div>
                         </div>
                     </div>
 

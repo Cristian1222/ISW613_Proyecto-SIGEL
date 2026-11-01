@@ -1,0 +1,4 @@
+Options -Indexes
+<IfModule mod_php.c>
+    Require all denied
+</IfModule>

@@ -130,6 +130,30 @@ require_once __DIR__ . '/../../includes/header.php';
 
             </div>
 
+            <!-- Tarjeta de reportes -->
+            <div class="col-md-4">
+
+                <div class="card h-100 shadow-sm">
+
+                    <div class="card-body">
+
+                        <h5 class="card-title">Reportes</h5>
+
+                        <p class="card-text">
+                            Descarga reportes del inventario y de los
+                            préstamos registrados en SIGEL.
+                        </p>
+
+                        <a href="reportes.php" class="btn btn-primary mt-3">
+                            Consultar reportes
+                        </a>
+
+                    </div>
+
+                </div>
+
+            </div>
+
         <?php endif; ?>
 
     </div>

@@ -7,11 +7,11 @@ session_start();
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/csrf.php';
 require_once __DIR__ . '/../../includes/helpers.php';
+require_once __DIR__ . '/../../includes/imagenes.php';
 
 // Solo usuarios autenticados pueden consultar el inventario.
 requerirAutenticacion();
 
-$rol = obtenerUsuario()['rol'] ?? '';
 $esAdmin = tieneRol(['admin']);
 $puedeGestionar = tieneRol(['admin', 'operador']);
 
@@ -33,6 +33,7 @@ try {
                 e.cantidad_total,
                 e.cantidad_disponible,
                 e.estado,
+                e.imagen,
                 c.nombre AS categoria
             FROM equipos e
             INNER JOIN categorias c ON c.id = e.categoria_id
@@ -96,6 +97,7 @@ try {
 
                 <thead class="table-dark">
                     <tr>
+                        <th>Imagen</th>
                         <th>Código</th>
                         <th>Equipo</th>
                         <th>Categoría</th>
@@ -114,6 +116,22 @@ try {
                     <?php foreach ($equipos as $equipo): ?>
 
                         <tr>
+
+                            <td>
+                                <?php $urlImagen = obtenerUrlImagenEquipo($equipo['imagen']); ?>
+
+                                <?php if ($urlImagen !== null): ?>
+                                    <img
+                                        src="<?= escapar($urlImagen) ?>"
+                                        alt="Imagen de <?= escapar($equipo['nombre']) ?>"
+                                        width="75"
+                                        height="65"
+                                        style="object-fit: cover; border-radius: 6px;"
+                                    >
+                                <?php else: ?>
+                                    <span class="text-muted">Sin imagen</span>
+                                <?php endif; ?>
+                            </td>
 
                             <td><?= escapar($equipo['codigo']) ?></td>
 

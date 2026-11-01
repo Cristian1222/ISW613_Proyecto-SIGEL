@@ -8,6 +8,7 @@ session_start();
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/csrf.php';
 require_once __DIR__ . '/../../includes/helpers.php';
+require_once __DIR__ . '/../../includes/imagenes.php';
 
 // Solo el administrador puede eliminar equipos.
 requerirRol(['admin']);
@@ -35,16 +36,33 @@ if ($id === false || $id === null) {
 require_once __DIR__ . '/../../config/database.php';
 
 try {
-    $consulta = $pdo->prepare(
+    // Buscar primero el equipo y el nombre de su imagen.
+    $consultaEquipo = $pdo->prepare(
+        'SELECT imagen
+         FROM equipos
+         WHERE id = :id'
+    );
+
+    $consultaEquipo->execute(['id' => $id]);
+    $equipo = $consultaEquipo->fetch(PDO::FETCH_ASSOC);
+
+    if (!$equipo) {
+        redirigir('../pages/equipos.php?error=equipment_not_found');
+    }
+
+    // Eliminar el registro de la base de datos.
+    $consultaEliminar = $pdo->prepare(
         'DELETE FROM equipos WHERE id = :id'
     );
 
-    $consulta->execute(['id' => $id]);
+    $consultaEliminar->execute(['id' => $id]);
 
-    // Comprobar si se eliminó algún registro.
-    if ($consulta->rowCount() === 0) {
+    if ($consultaEliminar->rowCount() === 0) {
         redirigir('../pages/equipos.php?error=equipment_not_found');
     }
+
+    // Eliminar la fotografía solamente después de borrar el registro.
+    eliminarImagenEquipo($equipo['imagen']);
 
     // Eliminación exitosa.
     redirigir('../pages/equipos.php?success=equipment_deleted');
