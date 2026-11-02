@@ -60,7 +60,7 @@ if (
     $cantidad === false ||
     !$fechasValidas ||
     $fechaInicio < date('Y-m-d') ||
-    $fechaDevolucion <= $fechaInicio ||
+    $fechaDevolucion < $fechaInicio ||
     mb_strlen($observaciones) > 2000
 ) {
     redirigir('../pages/crear_prestamo.php?error=invalid_input');
@@ -172,11 +172,17 @@ try {
 
 } catch (Throwable $e) {
 
-    if ($pdo->inTransaction()) {
-        $pdo->rollBack();
-    }
+    // Registrar el error original.
+    error_log('Error al crear préstamo: ' . $e->getMessage());
 
-    error_log($e->getMessage());
+    // Intentar revertir la transacción sin provocar otro error.
+    try {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+    } catch (Throwable $errorRollback) {
+        error_log('Error al revertir la transacción: ' . $errorRollback->getMessage());
+    }
 
     redirigir('../pages/crear_prestamo.php?error=server_error');
 }
