@@ -40,6 +40,7 @@ $cantidad = filter_var(
 );
 
 $fechaInicio = trim((string) obtenerPost('fecha_inicio', ''));
+$horaInicio = trim((string) obtenerPost('hora_inicio', ''));
 $fechaDevolucion = trim((string) obtenerPost('fecha_devolucion_prevista', ''));
 $observaciones = trim((string) obtenerPost('observaciones', ''));
 
@@ -47,11 +48,34 @@ $observaciones = trim((string) obtenerPost('observaciones', ''));
 $fechaInicioObj = DateTime::createFromFormat('!Y-m-d', $fechaInicio);
 $fechaDevolucionObj = DateTime::createFromFormat('!Y-m-d', $fechaDevolucion);
 
+// Validar la hora.
+$horaInicioObj = DateTime::createFromFormat('!H:i', $horaInicio);
+
 $fechasValidas =
     $fechaInicioObj !== false &&
     $fechaInicioObj->format('Y-m-d') === $fechaInicio &&
     $fechaDevolucionObj !== false &&
     $fechaDevolucionObj->format('Y-m-d') === $fechaDevolucion;
+
+$horaValida =
+    $horaInicioObj !== false &&
+    $horaInicioObj->format('H:i') === $horaInicio;
+
+// Comprobar que la fecha y hora de inicio no estén en el pasado.
+$inicioPrestamo = false;
+
+if ($fechasValidas && $horaValida) {
+    $inicioPrestamo = DateTime::createFromFormat(
+        '!Y-m-d H:i',
+        $fechaInicio . ' ' . $horaInicio
+    );
+}
+
+$ahora = new DateTime(date('Y-m-d H:i'));
+
+$inicioValido =
+    $inicioPrestamo !== false &&
+    $inicioPrestamo >= $ahora;
 
 // Validar todos los campos.
 if (
@@ -59,7 +83,8 @@ if (
     $equipoId === false ||
     $cantidad === false ||
     !$fechasValidas ||
-    $fechaInicio < date('Y-m-d') ||
+    !$horaValida ||
+    !$inicioValido ||
     $fechaDevolucion < $fechaInicio ||
     mb_strlen($observaciones) > 2000
 ) {
@@ -122,6 +147,7 @@ try {
             profesor_id,
             fecha_solicitud,
             fecha_inicio,
+            hora_inicio,
             fecha_devolucion_prevista,
             estado,
             observaciones
@@ -130,6 +156,7 @@ try {
             :profesor_id,
             NOW(),
             :fecha_inicio,
+            :hora_inicio,
             :fecha_devolucion_prevista,
             'pendiente',
             :observaciones
@@ -140,6 +167,7 @@ try {
         'operador_id' => $_SESSION['usuario']['id'],
         'profesor_id' => $profesorId,
         'fecha_inicio' => $fechaInicio,
+        'hora_inicio' => $horaInicio,
         'fecha_devolucion_prevista' => $fechaDevolucion,
         'observaciones' => $observaciones !== '' ? $observaciones : null
     ]);
@@ -175,7 +203,7 @@ try {
     // Registrar el error original.
     error_log('Error al crear préstamo: ' . $e->getMessage());
 
-    // Intentar revertir la transacción sin provocar otro error.
+    // Revertir la transacción si sigue activa.
     try {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();

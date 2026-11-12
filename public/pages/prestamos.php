@@ -13,6 +13,12 @@ requerirAutenticacion();
 
 // Obtener permisos según el rol.
 $puedeGestionar = tieneRol(['admin', 'operador']);
+$esOperador = tieneRol(['operador']);
+$esProfesor = tieneRol(['profesor']);
+$usuarioId = (int) ($_SESSION['usuario']['id'] ?? 0);
+
+// Mostrar acciones a operadores, administradores y profesores.
+$puedeVerAcciones = $puedeGestionar || $esProfesor;
 
 // Generar el token CSRF para los formularios.
 $tokenCSRF = generarTokenCSRF();
@@ -31,8 +37,10 @@ try {
     $sql = "
         SELECT
             p.id,
+            p.profesor_id,
             p.fecha_solicitud,
             p.fecha_inicio,
+            p.hora_inicio,
             p.fecha_devolucion_prevista,
             p.fecha_devolucion_real,
             p.estado,
@@ -136,7 +144,7 @@ $clasesEstado = [
                                 <th>Estado</th>
                                 <th>Observaciones</th>
 
-                                <?php if ($puedeGestionar): ?>
+                                <?php if ($puedeVerAcciones): ?>
                                     <th>Acciones</th>
                                 <?php endif; ?>
                             </tr>
@@ -149,6 +157,19 @@ $clasesEstado = [
                                 <?php
                                 $estado = $prestamo['estado'];
                                 $clase = $clasesEstado[$estado] ?? 'bg-secondary';
+
+                                $esPropietario = (int) $prestamo['profesor_id'] === $usuarioId;
+
+                                $puedeCancelar = (
+                                    $esOperador ||
+                                    ($esProfesor && $esPropietario)
+                                );
+
+                                $estadoCancelable = in_array(
+                                    $estado,
+                                    ['pendiente', 'aprobado', 'entregado'],
+                                    true
+                                );
                                 ?>
 
                                 <tr>
@@ -159,9 +180,20 @@ $clasesEstado = [
 
                                     <td><?= escapar($prestamo['operador']) ?></td>
 
-                                    <td><?= escapar($prestamo['fecha_inicio']) ?></td>
+                                    <td>
+                                        <?= escapar($prestamo['fecha_inicio']) ?>
 
-                                    <td><?= escapar($prestamo['fecha_devolucion_prevista']) ?></td>
+                                        <?php if (!empty($prestamo['hora_inicio'])): ?>
+                                            <br>
+                                            <small class="text-muted">
+                                                <?= escapar(substr($prestamo['hora_inicio'], 0, 5)) ?>
+                                            </small>
+                                        <?php endif; ?>
+                                    </td>
+
+                                    <td>
+                                        <?= escapar($prestamo['fecha_devolucion_prevista']) ?>
+                                    </td>
 
                                     <td>
                                         <?= $prestamo['fecha_devolucion_real']
@@ -179,11 +211,11 @@ $clasesEstado = [
                                         <?= escapar($prestamo['observaciones'] ?? '') ?: '—' ?>
                                     </td>
 
-                                    <?php if ($puedeGestionar): ?>
+                                    <?php if ($puedeVerAcciones): ?>
 
                                         <td>
 
-                                            <?php if ($estado === 'pendiente'): ?>
+                                            <?php if ($puedeGestionar && $estado === 'pendiente'): ?>
 
                                                 <form
                                                     action="../actions/aprobar_prestamo.php"
@@ -210,11 +242,12 @@ $clasesEstado = [
 
                                                 </form>
 
-                                            <?php elseif ($estado === 'aprobado'): ?>
+                                            <?php elseif ($puedeGestionar && $estado === 'aprobado'): ?>
 
                                                 <form
                                                     action="../actions/entregar_prestamo.php"
                                                     method="POST"
+                                                    class="mb-1"
                                                     onsubmit="return confirm('¿Deseas registrar la entrega de este préstamo?');"
                                                 >
 
@@ -236,12 +269,12 @@ $clasesEstado = [
 
                                                 </form>
 
-                                            <?php elseif ($estado === 'entregado'): ?>
+                                            <?php elseif ($puedeGestionar && $estado === 'entregado'): ?>
 
                                                 <form
                                                     action="../actions/devolver_prestamo.php"
                                                     method="POST"
-                                                    class="m-0"
+                                                    class="mb-1"
                                                     onsubmit="return confirm('¿Confirmas que el equipo fue devuelto?');"
                                                 >
 
@@ -264,7 +297,41 @@ $clasesEstado = [
 
                                                 </form>
 
-                                            <?php else: ?>
+                                            <?php endif; ?>
+
+                                            <?php if ($puedeCancelar && $estadoCancelable): ?>
+
+                                                <form
+                                                    action="../actions/cancelar_prestamo.php"
+                                                    method="POST"
+                                                    class="mt-1"
+                                                    onsubmit="return confirm('¿Deseas cancelar este préstamo? Se verificará que cumplas el tiempo mínimo de anticipación.');"
+                                                >
+
+                                                    <input
+                                                        type="hidden"
+                                                        name="csrf_token"
+                                                        value="<?= escapar($tokenCSRF) ?>"
+                                                    >
+
+                                                    <input
+                                                        type="hidden"
+                                                        name="prestamo_id"
+                                                        value="<?= (int) $prestamo['id'] ?>"
+                                                    >
+
+                                                    <button type="submit" class="btn btn-sm btn-danger">
+                                                        Cancelar
+                                                    </button>
+
+                                                </form>
+
+                                            <?php endif; ?>
+
+                                            <?php if (
+                                                !($puedeGestionar && $estadoCancelable) &&
+                                                !($puedeCancelar && $estadoCancelable)
+                                            ): ?>
 
                                                 <span class="text-muted">—</span>
 

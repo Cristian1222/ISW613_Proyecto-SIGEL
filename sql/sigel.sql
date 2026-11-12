@@ -119,3 +119,16 @@ VALUES
     bloqueado_hasta DATETIME NULL,
     ultimo_intento DATETIME NULL
 );
+CREATE TABLE configuracion (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    cancelacion_minutos INT UNSIGNED NOT NULL DEFAULT 60,
+    actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+INSERT INTO configuracion (id, cancelacion_minutos)
+VALUES (1, 60);
+
+ALTER TABLE prestamos
+ADD COLUMN hora_inicio TIME NULL
+AFTER fecha_inicio;

@@ -180,9 +180,10 @@ try {
 
                 </div>
 
+                <!-- Fecha y hora de inicio -->
                 <div class="row">
 
-                    <div class="col-md-6 mb-3">
+                    <div class="col-md-4 mb-3">
 
                         <label for="fecha_inicio" class="form-label">
                             Fecha de inicio
@@ -200,7 +201,24 @@ try {
 
                     </div>
 
-                    <div class="col-md-6 mb-3">
+                    <div class="col-md-4 mb-3">
+
+                        <label for="hora_inicio" class="form-label">
+                            Hora de inicio
+                        </label>
+
+                        <input
+                            type="time"
+                            name="hora_inicio"
+                            id="hora_inicio"
+                            class="form-control"
+                            value="<?= date('H:i') ?>"
+                            required
+                        >
+
+                    </div>
+
+                    <div class="col-md-4 mb-3">
 
                         <label for="fecha_devolucion_prevista" class="form-label">
                             Fecha prevista de devolución
