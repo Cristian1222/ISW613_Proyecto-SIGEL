@@ -2,12 +2,15 @@
 
 declare(strict_types=1);
 
+date_default_timezone_set('America/Costa_Rica');
+
 session_start();
 
-// Cargar funciones auxiliares.
+// Cargar archivos necesarios.
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/csrf.php';
 require_once __DIR__ . '/../../includes/helpers.php';
+require_once __DIR__ . '/../../config/database.php';
 
 // Verificar autenticación y permisos.
 requerirRol(['admin', 'operador']);
@@ -17,10 +20,10 @@ if (!esPost()) {
     redirigir('../pages/crear_prestamo.php?error=invalid_request');
 }
 
-// Validar el token CSRF.
+// Validar token CSRF.
 requerirTokenCSRF();
 
-// Obtener y validar los datos del formulario.
+// Obtener datos del formulario.
 $profesorId = filter_var(
     obtenerPost('profesor_id'),
     FILTER_VALIDATE_INT,
@@ -44,11 +47,11 @@ $horaInicio = trim((string) obtenerPost('hora_inicio', ''));
 $fechaDevolucion = trim((string) obtenerPost('fecha_devolucion_prevista', ''));
 $observaciones = trim((string) obtenerPost('observaciones', ''));
 
-// Validar las fechas.
+// Validar fechas.
 $fechaInicioObj = DateTime::createFromFormat('!Y-m-d', $fechaInicio);
 $fechaDevolucionObj = DateTime::createFromFormat('!Y-m-d', $fechaDevolucion);
 
-// Validar la hora.
+// Validar hora.
 $horaInicioObj = DateTime::createFromFormat('!H:i', $horaInicio);
 
 $fechasValidas =
@@ -61,7 +64,7 @@ $horaValida =
     $horaInicioObj !== false &&
     $horaInicioObj->format('H:i') === $horaInicio;
 
-// Comprobar que la fecha y hora de inicio no estén en el pasado.
+// Construir fecha y hora de inicio.
 $inicioPrestamo = false;
 
 if ($fechasValidas && $horaValida) {
@@ -71,7 +74,8 @@ if ($fechasValidas && $horaValida) {
     );
 }
 
-$ahora = new DateTime(date('Y-m-d H:i'));
+// Comparar con la hora actual de Costa Rica.
+$ahora = new DateTime('now');
 
 $inicioValido =
     $inicioPrestamo !== false &&
@@ -90,9 +94,6 @@ if (
 ) {
     redirigir('../pages/crear_prestamo.php?error=invalid_input');
 }
-
-// Conectar con la base de datos.
-require_once __DIR__ . '/../../config/database.php';
 
 try {
 
@@ -116,7 +117,7 @@ try {
         redirigir('../pages/crear_prestamo.php?error=invalid_input');
     }
 
-    // Bloquear el equipo mientras se verifica su inventario.
+    // Bloquear el equipo mientras se verifica el inventario.
     $consultaEquipo = $pdo->prepare("
         SELECT id, cantidad_disponible
         FROM equipos
@@ -131,7 +132,7 @@ try {
 
     $equipo = $consultaEquipo->fetch(PDO::FETCH_ASSOC);
 
-    // Verificar que exista el equipo y tenga suficientes unidades.
+    // Comprobar disponibilidad.
     if (
         !$equipo ||
         $cantidad > (int) $equipo['cantidad_disponible']
@@ -140,7 +141,7 @@ try {
         redirigir('../pages/crear_prestamo.php?error=invalid_input');
     }
 
-    // Registrar la solicitud como pendiente.
+    // Registrar préstamo pendiente.
     $insertarPrestamo = $pdo->prepare("
         INSERT INTO prestamos (
             operador_id,
@@ -167,7 +168,7 @@ try {
         'operador_id' => $_SESSION['usuario']['id'],
         'profesor_id' => $profesorId,
         'fecha_inicio' => $fechaInicio,
-        'hora_inicio' => $horaInicio,
+        'hora_inicio' => $horaInicio . ':00',
         'fecha_devolucion_prevista' => $fechaDevolucion,
         'observaciones' => $observaciones !== '' ? $observaciones : null
     ]);
@@ -193,23 +194,17 @@ try {
         'cantidad' => $cantidad
     ]);
 
-    // Confirmar el registro.
+    // Confirmar operación.
     $pdo->commit();
 
     redirigir('../pages/prestamos.php?success=loan_created');
 
 } catch (Throwable $e) {
 
-    // Registrar el error original.
     error_log('Error al crear préstamo: ' . $e->getMessage());
 
-    // Revertir la transacción si sigue activa.
-    try {
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-    } catch (Throwable $errorRollback) {
-        error_log('Error al revertir la transacción: ' . $errorRollback->getMessage());
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
     }
 
     redirigir('../pages/crear_prestamo.php?error=server_error');

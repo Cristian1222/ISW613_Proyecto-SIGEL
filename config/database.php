@@ -2,10 +2,12 @@
 
 declare(strict_types=1);
 
+date_default_timezone_set('America/Costa_Rica');
+
 $host = '127.0.0.1';
 $dbname = 'isw613_proyecto_sigel';
 $username = 'root';
-$password = ''; 
+$password = '';
 
 $dsn = "mysql:host={$host};dbname={$dbname};charset=utf8mb4";
 
@@ -22,6 +24,10 @@ try {
         $password,
         $options
     );
+
+    // Mantener MySQL en la misma zona horaria que PHP.
+    $pdo->exec("SET time_zone = '-06:00'");
+
 } catch (PDOException $e) {
     error_log($e->getMessage());
     http_response_code(500);

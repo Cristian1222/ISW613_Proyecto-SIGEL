@@ -104,9 +104,9 @@ require_once __DIR__ . '/../../includes/header.php';
 
         </div>
 
-        <!-- Solo el administrador puede gestionar usuarios -->
         <?php if ($esAdmin): ?>
 
+            <!-- Tarjeta de usuarios -->
             <div class="col-md-4">
 
                 <div class="card h-100 shadow-sm">
@@ -146,6 +146,30 @@ require_once __DIR__ . '/../../includes/header.php';
 
                         <a href="reportes.php" class="btn btn-primary mt-3">
                             Consultar reportes
+                        </a>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <!-- Tarjeta de configuración -->
+            <div class="col-md-4">
+
+                <div class="card h-100 shadow-sm">
+
+                    <div class="card-body">
+
+                        <h5 class="card-title">Configuración</h5>
+
+                        <p class="card-text">
+                            Configura el tiempo mínimo de anticipación
+                            para cancelar solicitudes de préstamo.
+                        </p>
+
+                        <a href="configuracion.php" class="btn btn-primary mt-3">
+                            Administrar configuración
                         </a>
 
                     </div>

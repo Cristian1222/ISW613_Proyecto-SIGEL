@@ -20,6 +20,7 @@ const MESSAGES = [
         'cancellation_too_late' => 'No se puede cancelar el préstamo porque no cumple con el tiempo mínimo de anticipación.',
         'loan_time_missing' => 'No se puede verificar la hora de inicio de este préstamo. Contacte al administrador.',
         'loan_not_cancelable' => 'Este préstamo no se encuentra en un estado que permita cancelarlo.',
+        
     ],
 
     'success' => [
@@ -36,6 +37,7 @@ const MESSAGES = [
         'loan_delivered' => 'El préstamo fue entregado correctamente y el inventario fue actualizado.',
         'loan_returned' => 'La devolución se registró correctamente y el inventario fue actualizado.',
         'loan_cancelled' => 'El préstamo fue cancelado correctamente.',
+        'configuration_updated' => 'La configuración se actualizó correctamente.',
     ],
 ];
 
